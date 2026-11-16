@@ -1,0 +1,37 @@
+syntax = "proto3";
+package aurora.detection;
+
+import "vector.proto";
+
+// Result of phase gradient fitting for position estimation.
+// Uses weighted linear regression across K-space samples.
+message PhaseGradientResult {
+    aurora.shared.Vector3 position_m = 1;  // Estimated position in meters
+    double common_phase_rad = 2;           // Common phase offset in radians
+    double residual_rad = 3;               // Fit residual (RMS phase error)
+    double condition_number = 4;           // Condition number of fit matrix
+}
+
+// Result of a one-dimensional weighted phase-gradient fit: phi = -k * x + c.
+message GradientFitResult {
+    double angle_rad = 1;               // Estimated angle
+    double uncertainty_rad = 2;         // Uncertainty estimate
+    double residual_rad = 3;            // RMS fit residual
+    double r_squared = 4;               // Coefficient of determination
+    repeated double per_sample_residuals = 5;  // Per-sample residuals for extent analysis
+    bool valid = 6;                     // Whether fit succeeded
+}
+
+// Result of a two-dimensional phase-gradient fit across the detector
+// K-samples at one range bin: phi_i = -(kx_i * x + ky_i * y) + c.
+message AngleFitResult {
+    double azimuth_rad = 1;                // Estimated azimuth angle
+    double elevation_rad = 2;              // Estimated elevation angle (0 if unobservable)
+    double azimuth_uncertainty_rad = 3;    // Azimuth uncertainty (Cramer-Rao style)
+    double elevation_uncertainty_rad = 4;  // Elevation uncertainty (inf if unobservable)
+    double residual_rad = 5;               // RMS phase residual after fit
+    double condition_number = 6;           // Condition number of the normal equations
+    uint32 num_samples = 7;                // K-samples used in the fit
+    bool elevation_observable = 8;         // True when ky span allows elevation estimation
+    bool valid = 9;                        // Whether the fit succeeded
+}

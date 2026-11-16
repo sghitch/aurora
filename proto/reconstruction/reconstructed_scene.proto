@@ -1,0 +1,53 @@
+syntax = "proto3";
+package aurora.reconstruction;
+
+import "axis.proto";
+import "complex.proto";
+
+// Reconstructed image at a single range bin.
+message ReconstructedImage {
+    uint32 range_bin = 1;              // Range bin index
+    double range_m = 2;                 // Range in meters
+
+    // Image grid axes
+    aurora.shared.Axis x_axis = 3;     // X-axis specification
+    aurora.shared.Axis y_axis = 4;     // Y-axis specification
+
+    // Image data (row-major: y varies slowest)
+    repeated aurora.shared.Complex pixels = 5;
+
+    // Quality metrics
+    double peak_value = 6;             // Maximum pixel magnitude
+    double total_energy = 7;           // Sum of squared magnitudes
+    double sparsity = 8;               // Fraction of significant pixels
+}
+
+// Reconstruction at a single wavelength.
+message WavelengthReconstruction {
+    double wavelength_m = 1;           // Wavelength in meters
+    repeated ReconstructedImage images = 2;  // Images per range bin
+}
+
+// Doppler-resolved reconstruction map.
+message DopplerMap {
+    aurora.shared.Axis velocity_axis = 1;  // Velocity axis specification
+    repeated ReconstructedImage bins = 2;   // Image per velocity bin
+}
+
+// Complete reconstructed scene output.
+message ReconstructedScene {
+    // Identification
+    uint64 frame_id = 1;               // Unique frame identifier
+    double timestamp_s = 2;            // Timestamp in seconds
+
+    // Reconstructed data by wavelength
+    repeated WavelengthReconstruction wavelengths = 3;
+
+    // Optional Doppler-resolved reconstruction
+    optional DopplerMap doppler_map = 4;
+
+    // Processing metrics
+    uint32 iterations = 5;             // Iterations (for iterative algorithms)
+    double convergence_residual = 6;   // Final convergence residual
+    double processing_time_ms = 7;     // Processing latency in ms
+}

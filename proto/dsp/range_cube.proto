@@ -1,0 +1,33 @@
+syntax = "proto3";
+package aurora.dsp;
+
+import "complex.proto";
+import "axis.proto";
+import "sequence_plan.proto";
+
+// Range-resolved complex data for one detector pixel.
+message DetectorRangeData {
+    uint32 detector_index = 1;
+    repeated aurora.shared.Complex bins = 2;
+}
+
+// Range data for every detector at one wavelength.
+message WavelengthRangeData {
+    double wavelength_m = 1;  // Wavelength in meters
+    repeated DetectorRangeData detectors = 2;
+}
+
+// Range-processed output of one burst.
+//
+// `wavelengths` holds the chirp-averaged range profiles. When the burst used
+// up/down chirps and was processed with process_doppler(), the per-direction
+// profiles are also provided so velocity can be recovered downstream.
+message RangeCube {
+    aurora.shared.Axis range_axis = 1;
+    aurora.acquisition.SequencePlan plan = 2;
+    repeated WavelengthRangeData wavelengths = 5;
+    repeated WavelengthRangeData up_chirps = 6;    // Optional: up-chirp-only profiles
+    repeated WavelengthRangeData down_chirps = 7;  // Optional: down-chirp-only profiles
+    uint64 burst_id = 3;
+    double timestamp_s = 4;  // Burst timestamp in seconds
+}

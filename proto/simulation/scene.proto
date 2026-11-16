@@ -1,0 +1,136 @@
+syntax = "proto3";
+package aurora.simulation;
+
+import "vector.proto";
+
+// Surface type for material discrimination testing.
+enum SurfaceType {
+    SURFACE_UNSPECIFIED = 0;
+    SURFACE_DRY_ASPHALT = 1;
+    SURFACE_WET_ASPHALT = 2;
+    SURFACE_WATER = 3;
+    SURFACE_ICE = 4;
+    SURFACE_VEGETATION = 5;
+    SURFACE_METAL = 6;
+    SURFACE_GLASS = 7;
+}
+
+// Surface material properties with per-wavelength reflectivity.
+// Used for analytic simulation models to compute wavelength-dependent
+// signal returns and material discrimination.
+message SurfaceProperties {
+    // Intrinsic reflectivity at 905nm (0, 1]. Required.
+    double reflectivity_905nm = 1;
+
+    // Intrinsic reflectivity at 1550nm (0, 1]. Required.
+    double reflectivity_1550nm = 2;
+
+    // RMS height roughness [m]. Required. Set to 0 for perfectly specular.
+    double roughness_rms_m = 3;
+
+    // Correlation length [m]. Required. Sets speckle grain size.
+    double correlation_length_m = 4;
+
+    // Override specular fraction directly (optional).
+    optional double specular_fraction_override = 5;
+}
+
+// Point target definition with position, velocity, and surface properties.
+message PointTargetDefinition {
+    aurora.shared.Vector3 position_m = 1;     // Position in meters
+    aurora.shared.Vector3 velocity_mps = 2;   // Velocity in meters per second
+
+    // Surface material properties (per-wavelength reflectivity).
+    SurfaceProperties surface = 3;
+
+    // Optional: target class for ground truth
+    string target_class = 5;
+
+    // Surface type for material discrimination testing
+    optional SurfaceType surface_type = 6;
+}
+
+// Planar target definition for extended surfaces.
+message PlaneTargetDefinition {
+    aurora.shared.Vector3 center_m = 1;       // Center position in meters
+    aurora.shared.Vector3 normal = 2;         // Surface normal (unit vector)
+    double width_m = 3;                       // Width in meters
+    double height_m = 4;                      // Height in meters
+    aurora.shared.Vector3 velocity_mps = 5;   // Velocity in meters per second
+
+    // Surface material properties (per-wavelength reflectivity).
+    SurfaceProperties surface = 6;
+
+    // Surface type for material discrimination testing
+    optional SurfaceType surface_type = 8;
+}
+
+// Vertex definition for mesh targets.
+message Vertex {
+    // Position in local mesh coordinates (meters).
+    // Transform applied via MeshTargetDefinition position/rotation.
+    aurora.shared.Vector3 position_m = 1;
+
+    // Per-vertex normal (optional).
+    // If not provided, face normals are used.
+    optional aurora.shared.Vector3 normal = 2;
+}
+
+// Face definition — supports triangles (3 vertices) or quads (4 vertices).
+message Face {
+    // Indices into the mesh's vertex list.
+    // Must have exactly 3 (triangle) or 4 (quad) indices.
+    repeated uint32 vertex_indices = 1;
+
+    // Face normal vector (optional).
+    // If not provided, computed from vertex positions using right-hand rule.
+    // Implementations normalize this to unit length.
+    optional aurora.shared.Vector3 face_normal = 2;
+
+    // Per-face surface property override (optional).
+    // If not set, uses MeshTargetDefinition.surface.
+    optional SurfaceProperties override_surface = 3;
+}
+
+// Mesh target definition for complex 3D geometry.
+// Meshes are defined in local coordinates and transformed to world space
+// using position_m (translation) and rotation_rad (Euler angles XYZ order).
+message MeshTargetDefinition {
+    // Vertex list for the mesh.
+    repeated Vertex vertices = 1;
+
+    // Face list (triangles or quads).
+    repeated Face faces = 2;
+
+    // Translation applied to all vertices (meters).
+    aurora.shared.Vector3 position_m = 3;
+
+    // Rotation applied to all vertices (Euler angles XYZ order, radians).
+    aurora.shared.Vector3 rotation_rad = 4;
+
+    // Rigid body velocity (meters per second).
+    aurora.shared.Vector3 velocity_mps = 5;
+
+    // Default surface material (applied to all faces unless overridden).
+    SurfaceProperties surface = 6;
+
+    // Surface type for material discrimination testing.
+    optional SurfaceType surface_type = 8;
+
+    // Mesh identifier for ground truth labeling.
+    optional string mesh_id = 9;
+}
+
+// Complete scene definition with targets and environmental parameters.
+message SceneDefinition {
+    repeated PointTargetDefinition point_targets = 1;
+    repeated PlaneTargetDefinition plane_targets = 2;
+
+    // Mesh targets for complex 3D geometry.
+    repeated MeshTargetDefinition mesh_targets = 6;
+
+    // Environment
+    double ambient_temperature_k = 3;            // Ambient temperature in Kelvin
+    double atmospheric_extinction_per_m = 4;     // Extinction coefficient in 1/m
+    double background_radiance_w_per_m2_sr = 5;  // Background radiance in W/(m²·sr)
+}

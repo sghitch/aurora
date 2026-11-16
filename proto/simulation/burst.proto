@@ -1,0 +1,26 @@
+syntax = "proto3";
+package aurora.simulation;
+
+import "sequence_plan.proto";
+
+// ADC samples for one chirp on one detector.
+message ChirpSamples {
+    uint32 chirp_index = 1;
+    repeated double wavelengths_m = 2;  // Wavelengths active during this chirp in meters
+    repeated int32 samples = 3 [packed = true];
+}
+
+// All chirps acquired by one detector pixel during a burst.
+message DetectorBurst {
+    uint32 detector_index = 1;
+    repeated ChirpSamples chirps = 2;
+}
+
+// One acquisition burst: the plan that produced it and the raw ADC samples
+// of every detector pixel.
+message Burst {
+    uint64 burst_id = 1;
+    double timestamp_s = 2;  // Burst start time in seconds
+    aurora.acquisition.SequencePlan plan = 4;
+    repeated DetectorBurst detectors = 3;
+}

@@ -1,0 +1,45 @@
+syntax = "proto3";
+package aurora.shared;
+
+import "complex.proto";
+import "axis.proto";
+
+// K-space vector representing spatial frequency coordinates.
+// Used to describe the scene K-space sample location of each detector pixel.
+message KVector {
+    double kx = 1;  // Spatial frequency in x (rad/m)
+    double ky = 2;  // Spatial frequency in y (rad/m)
+}
+
+// Data from a single detector pixel after DSP processing.
+// Contains the calibrated scene K-vector (detector K plus LO tilt) and range-resolved complex data.
+message DetectorChannel {
+    uint32 detector_index = 1;       // Detector pixel index (0-7 for 8-pixel array)
+    KVector k_vector = 2;            // Calibrated scene K-vector for this detector pixel
+    repeated Complex range_data = 3; // Complex data for each range bin
+}
+
+// Measurements at a single wavelength across all detectors.
+message WavelengthChannel {
+    double wavelength_m = 1;               // Wavelength in meters (e.g., 905e-9, 1550e-9)
+    repeated DetectorChannel detectors = 2; // Data from each detector at this wavelength
+}
+
+// The central post-DSP measurement representation for one burst.
+// Conceptual indexing: Y[wavelength][detector][range_bin] : complex
+//
+// Each detector pixel samples one K-space position per wavelength
+// (k_j = 2π·x_j/(f·λ)), so a burst yields one K-space sample per
+// (wavelength, detector) at every range bin.
+//
+// This is the authoritative data structure that Detection and Reconstruction
+// modules consume. Everything upstream (Simulation, DSP) produces it.
+message MeasurementTensor {
+    Axis range_axis = 1;              // Range axis specification (bins, resolution)
+    optional Axis doppler_axis = 2;   // Optional Doppler axis (for coherent integration)
+    repeated WavelengthChannel data = 3;         // Chirp-averaged data per wavelength
+    repeated WavelengthChannel up_chirp_data = 6;   // Optional: up-chirp-only data
+    repeated WavelengthChannel down_chirp_data = 7; // Optional: down-chirp-only data
+    uint64 burst_id = 4;              // Unique identifier for this measurement burst
+    double timestamp_s = 5;           // Timestamp in seconds (epoch or relative)
+}

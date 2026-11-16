@@ -1,0 +1,36 @@
+syntax = "proto3";
+package aurora.reconstruction;
+
+// Regularizer type for PCG reconstruction.
+//
+// The regularizer controls the smoothness/sparsity prior applied to the
+// reconstruction. Different regularizers are suited for different scene types.
+//
+// Selection guidelines:
+// - REGULARIZER_TIKHONOV: General purpose, penalizes solution magnitude
+// - REGULARIZER_GRADIENT: Preserves edges, penalizes gradients (TV-like)
+// - REGULARIZER_LAPLACIAN: Smooth solutions, penalizes curvature
+enum RegularizerType {
+    REGULARIZER_UNKNOWN = 0;     // Invalid/unspecified - must be set explicitly
+    REGULARIZER_TIKHONOV = 1;    // L = I (identity)
+    REGULARIZER_GRADIENT = 2;    // L = nabla (gradient magnitude)
+    REGULARIZER_LAPLACIAN = 3;   // L = nabla^2 (Laplacian)
+}
+
+// Preconditioner type for PCG solver.
+//
+// The preconditioner accelerates convergence by approximating the inverse
+// of the normal equations matrix (A*A + lambda*L*L).
+//
+// Selection guidelines:
+// - PRECONDITIONER_NONE: No preconditioning, slowest convergence
+// - PRECONDITIONER_JACOBI: Fast to compute, moderate speedup
+// - PRECONDITIONER_CIRCULANT: FFT-based, good for uniform K-space
+// - PRECONDITIONER_HYBRID: Best convergence, recommended default
+enum PreconditionerType {
+    PRECONDITIONER_UNKNOWN = 0;     // Invalid/unspecified - must be set explicitly
+    PRECONDITIONER_NONE = 1;        // No preconditioning (CG only)
+    PRECONDITIONER_JACOBI = 2;      // Diagonal approximation
+    PRECONDITIONER_CIRCULANT = 3;   // FFT-based Toeplitz inverse
+    PRECONDITIONER_HYBRID = 4;      // Diagonal x Circulant (recommended)
+}

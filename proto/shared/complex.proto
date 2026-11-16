@@ -1,0 +1,7 @@
+syntax = "proto3";
+package aurora.shared;
+
+message Complex {
+    double real = 1;
+    double imag = 2;
+}

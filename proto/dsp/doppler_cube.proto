@@ -1,0 +1,36 @@
+syntax = "proto3";
+package aurora.dsp;
+
+import "complex.proto";
+import "axis.proto";
+
+// Doppler-processed data for a single detector.
+message DetectorDopplerData {
+    uint32 detector_index = 1;
+
+    // 2D complex data: [range_bin][doppler_bin]
+    // Stored row-major (range varies fastest)
+    repeated aurora.shared.Complex bins = 2;
+}
+
+// Doppler-processed data for a single wavelength.
+message WavelengthDopplerData {
+    double wavelength_m = 1;  // Wavelength in meters
+    repeated DetectorDopplerData detectors = 2;
+}
+
+// Complete Doppler cube after range-Doppler processing.
+// Contains 2D range-Doppler maps for all wavelengths and detectors.
+message DopplerCube {
+    // Axes
+    aurora.shared.Axis range_axis = 1;
+    aurora.shared.Axis doppler_axis = 2;  // Velocity in m/s
+
+    // Data organized by wavelength, detector
+    repeated WavelengthDopplerData wavelengths = 3;
+
+    // Metadata
+    uint64 start_burst_id = 4;
+    uint64 end_burst_id = 5;
+    double timestamp_s = 6;  // Timestamp in seconds
+}

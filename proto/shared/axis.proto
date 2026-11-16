@@ -1,0 +1,10 @@
+syntax = "proto3";
+package aurora.shared;
+
+// Defines a uniformly-spaced axis (range, Doppler, etc.)
+message Axis {
+    string unit = 1;           // e.g., "m", "m/s"
+    double start = 2;          // First bin center
+    double step = 3;           // Bin spacing
+    uint32 count = 4;          // Number of bins
+}

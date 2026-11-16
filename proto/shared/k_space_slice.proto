@@ -1,0 +1,66 @@
+syntax = "proto3";
+package aurora.shared;
+
+import "complex.proto";
+
+// K-space measurement sample with full metadata.
+// Represents a single measurement point in K-space with its associated
+// K-vector position, sample weight, and originating detector pixel.
+message KSpaceSample {
+    // Measurement value (complex amplitude)
+    Complex value = 1;
+
+    // K-vector position (rad/m)
+    double kx = 2;
+    double ky = 3;
+
+    // Per-sample weight applied by the reconstruction operators (1.0 = unweighted)
+    double weight = 4;
+
+    // Detector pixel that acquired this sample
+    uint32 detector_index = 5;
+
+    // Optional: K-space acceptance bandwidth of the sample
+    optional double kx_bandwidth = 6;
+    optional double ky_bandwidth = 7;
+}
+
+// K-space slice: measurements for one range bin and wavelength.
+// This is the primary data contract between ForwardModel and Reconstruction
+// operators, representing all K-space samples at a single range/wavelength.
+message KSpaceSlice {
+    // All K-space samples in this slice
+    repeated KSpaceSample samples = 1;
+
+    // Slice metadata
+    uint32 range_bin = 2;
+    double wavelength_m = 3;
+
+    // Source measurement tensor ID (for traceability)
+    optional uint64 burst_id = 4;
+    optional double timestamp_s = 5;
+
+    // Grid hints for reconstruction (optional)
+    optional KSpaceGridHints grid_hints = 6;
+}
+
+// Hints for reconstruction grid setup.
+// Provides K-space extent and suggested grid parameters based on coverage.
+message KSpaceGridHints {
+    // K-space extent (rad/m)
+    double kx_min = 1;
+    double kx_max = 2;
+    double ky_min = 3;
+    double ky_max = 4;
+
+    // Suggested grid size based on K-coverage
+    uint32 suggested_nx = 5;
+    uint32 suggested_ny = 6;
+}
+
+// Collection of K-space slices (e.g., all range bins for a wavelength).
+// Useful for batch processing across range bins.
+message KSpaceSliceCollection {
+    repeated KSpaceSlice slices = 1;
+    double wavelength_m = 2;
+}

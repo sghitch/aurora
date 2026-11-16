@@ -1,0 +1,53 @@
+syntax = "proto3";
+package aurora.dsp;
+
+import "adc_config.proto";
+
+// Window function configuration for FFT processing.
+message WindowConfig {
+    enum WindowType {
+        WINDOW_RECTANGULAR = 0;
+        WINDOW_HANN = 1;
+        WINDOW_HAMMING = 2;
+        WINDOW_BLACKMAN = 3;
+        WINDOW_KAISER = 4;
+    }
+
+    WindowType type = 1;
+    optional double parameter = 2;  // For Kaiser: beta value (only used when type = WINDOW_KAISER)
+}
+
+// IQ demodulation configuration parameters.
+message IqDemodConfig {
+    double lpf_cutoff_hz = 1;        // Low-pass filter cutoff frequency in Hz
+    uint32 lpf_order = 2;            // Low-pass filter order (e.g., 4 for 4th order Butterworth)
+
+    // Reference frequency for IQ demodulation (Hz).
+    // Set to center of expected beat frequency range to produce analytic signal.
+    // Non-zero value breaks Hermitian symmetry, preventing mirror artifacts.
+    // For range R with bandwidth B and chirp duration T:
+    //   f_beat = 2*R*B/(c*T), use ref_freq near center of expected range.
+    // Default 0 gives real-valued output (no frequency shift).
+    double reference_freq_hz = 3;
+}
+
+// DSP pipeline configuration.
+// Controls range and Doppler processing parameters.
+message DspConfig {
+    // Range processing
+    WindowConfig range_window = 1;
+    uint32 range_fft_size = 2;       // Power of 2, >= samples per chirp
+    optional uint32 zero_pad_factor = 3;  // Zero-padding factor (1, 2, or 4). Omit to disable.
+
+    // Doppler processing
+    WindowConfig doppler_window = 4;
+    uint32 doppler_fft_size = 5;
+
+    // Preprocessing
+    bool enable_dc_removal = 6;
+    bool enable_phase_correction = 7;
+
+    // Hardware configuration
+    aurora.shared.AdcModelConfig adc_config = 8;  // ADC parameters
+    IqDemodConfig iq_demod_config = 9;            // IQ demodulation parameters
+}

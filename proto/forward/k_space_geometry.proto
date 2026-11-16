@@ -1,0 +1,15 @@
+syntax = "proto3";
+package aurora.forward;
+
+// The K-space sample a detector pixel acquires at one wavelength.
+//
+// Coordinates are detector K-space (rad/m) before the local-oscillator tilt
+// offset is applied; see ForwardModel::get_effective_k().
+message DetectorKSample {
+    uint32 detector_index = 1; // Index of the detector pixel (0-based)
+    double wavelength_m = 2;   // Wavelength at which this sample is acquired (meters)
+    double kx_eff = 3;         // K-vector x-component in rad/m
+    double ky_eff = 4;         // K-vector y-component in rad/m
+    double kx_bandwidth = 5;   // K-space acceptance bandwidth in kx in rad/m (from pixel width)
+    double ky_bandwidth = 6;   // K-space acceptance bandwidth in ky in rad/m (from pixel height)
+}

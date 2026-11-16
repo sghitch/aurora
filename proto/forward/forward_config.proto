@@ -1,0 +1,13 @@
+syntax = "proto3";
+package aurora.forward;
+
+import "detector_geometry.proto";
+import "optics_config.proto";
+
+// Complete configuration for the forward model module.
+// The detector geometry and optics fully determine which K-space positions
+// the receiver samples: k_j(λ) = 2π · x_j / (f · λ) for detector pixel j.
+message ForwardConfig {
+    DetectorGeometry detector = 1;      // Detector array geometry
+    OpticsConfig optics = 2;            // Optical system parameters
+}

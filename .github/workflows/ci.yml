@@ -1,0 +1,65 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    name: Build and Test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libeigen3-dev
+
+      - name: Cache protobuf
+        id: cache-protobuf
+        uses: actions/cache@v4
+        with:
+          path: ~/protobuf-install
+          key: protobuf-v29.2-${{ runner.os }}-v1
+
+      - name: Build protobuf
+        if: steps.cache-protobuf.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v29.2 --recursive \
+            https://github.com/protocolbuffers/protobuf.git ~/protobuf-src
+
+          cmake -S ~/protobuf-src -B ~/protobuf-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=~/protobuf-install \
+            -Dprotobuf_BUILD_TESTS=OFF \
+            -Dprotobuf_BUILD_CONFORMANCE=OFF \
+            -Dprotobuf_ABSL_PROVIDER=module \
+            -Dutf8_range_ENABLE_TESTS=OFF
+
+          cmake --build ~/protobuf-build -j $(nproc)
+          cmake --install ~/protobuf-build
+
+      - name: Configure Aurora
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=~/protobuf-install \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build Aurora
+        run: cmake --build build -j $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure -j $(nproc)
+
+      - name: Upload compile_commands.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile_commands
+          path: build/compile_commands.json
+          retention-days: 7

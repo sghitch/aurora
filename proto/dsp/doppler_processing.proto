@@ -1,0 +1,84 @@
+syntax = "proto3";
+package aurora.dsp;
+
+import "complex.proto";
+
+/// A detected peak in a single chirp's range FFT.
+message ChirpPeak {
+    uint32 bin_index = 1;              // FFT bin where peak was detected
+    double frequency_hz = 2;           // Frequency at bin center
+    double magnitude = 3;              // Peak magnitude (linear)
+    double phase_rad = 4;              // Peak phase
+    aurora.shared.Complex value = 5;   // Full complex value
+}
+
+/// A matched pair of peaks from up and down chirps.
+message PeakPair {
+    ChirpPeak up_peak = 1;
+    ChirpPeak down_peak = 2;
+    double association_score = 3;      // Confidence in pairing (0-1)
+}
+
+/// Doppler-corrected detection from peak pairing.
+message DopplerCorrectedPeak {
+    // Computed from peak pair
+    double range_m = 1;                // True range from (f_up + f_down)/2
+    double velocity_mps = 2;           // Velocity from (f_up - f_down)/2
+
+    // Complex amplitude (geometric mean of up/down magnitudes)
+    aurora.shared.Complex amplitude = 3;
+
+    // Quality metrics
+    double snr_db = 4;                 // Signal-to-noise ratio
+    double association_score = 5;      // Confidence in peak pairing
+
+    // Source peaks (for debugging)
+    uint32 up_bin = 6;
+    uint32 down_bin = 7;
+
+    // True if aliasing correction was applied
+    bool aliasing_corrected = 8;
+}
+
+/// Result of peak-based Doppler processing for one detector channel.
+message PeakDopplerResult {
+    uint32 detector_index = 1;
+    uint32 wavelength_index = 2;
+    repeated DopplerCorrectedPeak peaks = 3;
+}
+
+/// Configuration for peak-based Doppler processing.
+message PeakDopplerConfig {
+    // Peak detection (required - no defaults assumed)
+    double peak_threshold_db = 1;      // Minimum SNR for peak detection
+    uint32 min_peak_separation = 2;    // Minimum bins between peaks
+    double min_peak_magnitude = 7;     // Absolute minimum magnitude for peaks (0 = disabled)
+
+    // Peak association (required - no defaults assumed)
+    double max_velocity_mps = 3;       // Maximum expected velocity
+    double association_threshold = 4;  // Minimum score to accept pairing (0-1)
+
+    // Ambiguity handling
+    bool allow_unpaired_peaks = 5;     // Output peaks with no matching pair
+    optional double unpaired_velocity_mps = 6;  // Assumed velocity for unpaired peaks (only used if allow_unpaired_peaks)
+
+    // Aliasing correction for real-valued ADC sampling
+    // With real ADC, negative down-chirp beat frequencies alias to positive:
+    //   f_down = f_beat - f_doppler < 0 => observed as |f_down|
+    // This causes incorrect range/velocity when v > R*B*lambda/(c*T)
+    bool enable_aliasing_correction = 8;
+
+    // Expected maximum range in meters - helps detect aliased frequencies
+    // If computed range exceeds this, aliasing correction is applied
+    optional double expected_max_range_m = 9;
+
+    // Minimum frequency ratio (f_down/f_up) before considering aliasing
+    // If f_down < aliasing_detection_ratio * f_up, may be aliased
+    // Default behavior when not set: 0.3
+    optional double aliasing_detection_ratio = 10;
+
+    // Minimum range ratio (range_positive/range_negative) to trigger correction
+    // For aliased signals, the uncorrected range is larger than the corrected range
+    // Default behavior when not set: 1.15
+    optional double aliasing_range_ratio_threshold = 11;
+}

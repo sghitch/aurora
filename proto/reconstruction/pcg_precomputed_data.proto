@@ -1,0 +1,141 @@
+syntax = "proto3";
+package aurora.reconstruction;
+
+import "pcg_types.proto";
+
+// Specification for the reconstruction grid.
+//
+// Defines the spatial extent and resolution of the output image grid.
+// All coordinates are in meters, following the project convention.
+message GridSpec {
+    // Grid size in x (number of pixels).
+    uint32 size_x = 1;
+
+    // Grid size in y (number of pixels).
+    uint32 size_y = 2;
+
+    // Pixel spacing in x (meters).
+    double spacing_x_m = 3;
+
+    // Pixel spacing in y (meters).
+    double spacing_y_m = 4;
+
+    // Grid origin x coordinate (meters).
+    // This is the position of pixel (0, 0).
+    double origin_x_m = 5;
+
+    // Grid origin y coordinate (meters).
+    double origin_y_m = 6;
+}
+
+// Input parameters used to generate precomputed PCG data.
+//
+// These parameters uniquely identify the precomputation configuration.
+// If any of these change, the precomputed data must be regenerated.
+message PcgPrecomputationInputs {
+    // Receiver geometry identifier.
+    //
+    // Identifies the detector geometry and optics that define the K-space sampling.
+    string geometry_id = 1;
+
+    // Calibration artifact identifier.
+    //
+    // Links to the CalibrationArtifact used for K-space correction.
+    string calibration_id = 2;
+
+    // Reconstruction grid specification.
+    GridSpec grid = 3;
+
+    // Operating wavelength (meters).
+    double wavelength_m = 4;
+
+    // Regularizer type used in precomputation.
+    RegularizerType regularizer_type = 5;
+
+    // Preconditioner type used in precomputation.
+    PreconditionerType preconditioner_type = 6;
+}
+
+// Precomputed data for PCG reconstruction at a single wavelength.
+//
+// Stores matrices that are expensive to compute but reusable across
+// multiple reconstruction frames with the same K-space geometry.
+//
+// The PCG solver computes: (A*A + lambda*L*L)^(-1) * A*y
+//
+// Precomputed quantities:
+// - PSF: A*A applied to delta function (point spread function)
+// - Transfer function: FFT of PSF for circulant approximation
+// - Regularizer spectrum: FFT of L*L for efficient application
+// - Operator diagonal: diag(A*A) for Jacobi preconditioner
+//
+// Complex arrays are stored as interleaved real/imaginary pairs:
+// [re_0, im_0, re_1, im_1, ...]
+message PcgPrecomputedData {
+    // Input parameters that generated this data.
+    PcgPrecomputationInputs inputs = 1;
+
+    // Point spread function (PSF) of A*A.
+    //
+    // Size: 2 * Nx * Ny (complex interleaved)
+    // Layout: row-major, complex interleaved [re, im, re, im, ...]
+    //
+    // PSF[i,j] = (A*A)(delta at center)[i,j]
+    repeated double psf = 2 [packed = true];
+
+    // Transfer function (FFT of PSF).
+    //
+    // Size: 2 * Nx * Ny (complex interleaved)
+    // Layout: row-major, complex interleaved
+    //
+    // Used for circulant preconditioner: P^(-1) = IFFT(1 / H)
+    repeated double transfer_function = 3 [packed = true];
+
+    // Regularizer spectrum (FFT of L*L kernel).
+    //
+    // Size: Nx * Ny (real values)
+    // Layout: row-major
+    //
+    // For Tikhonov: constant 1.0
+    // For gradient: |2*pi*f|^2
+    // For Laplacian: |2*pi*f|^4
+    repeated double regularizer_spectrum = 4 [packed = true];
+
+    // Diagonal of A*A operator.
+    //
+    // Size: Nx * Ny (real values)
+    // Layout: row-major
+    //
+    // Used for Jacobi preconditioner: P^(-1) = diag(A*A + lambda*L*L)^(-1)
+    repeated double operator_diagonal = 5 [packed = true];
+
+    // Timestamp when this data was generated (seconds since epoch).
+    double generation_timestamp_s = 10;
+
+    // Version string of the generator code.
+    string generator_version = 11;
+
+    // Time taken to compute this data (seconds).
+    double computation_time_s = 12;
+}
+
+// Collection of precomputed PCG data for multiple wavelengths.
+//
+// For multi-wavelength operation (e.g., 905nm + 1550nm), each wavelength
+// has different K-space geometry due to k = 2*pi/lambda scaling.
+// This message groups all wavelength-specific precomputed data together.
+message PcgPrecomputedDataSet {
+    // Precomputed data for each wavelength.
+    //
+    // Typically contains 1-2 entries (one per operating wavelength).
+    repeated PcgPrecomputedData wavelength_data = 1;
+
+    // Receiver geometry identifier (shared across wavelengths).
+    string geometry_id = 2;
+
+    // Calibration artifact identifier (shared across wavelengths).
+    string calibration_id = 3;
+
+    // Reconstruction grid (shared across wavelengths).
+    GridSpec grid = 4;
+}

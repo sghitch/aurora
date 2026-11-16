@@ -1,0 +1,10 @@
+syntax = "proto3";
+package aurora.detection;
+
+// Result of Doppler velocity estimation for a detected object.
+message DopplerResult {
+    double velocity_mps = 1;                   // Radial velocity in m/s (+ = approaching)
+    double confidence = 2;                     // Confidence in velocity estimate [0, 1]
+    bool ambiguous = 3;                        // True if velocity may be aliased
+    double max_unambiguous_velocity_mps = 4;   // Maximum unambiguous velocity
+}

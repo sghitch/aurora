@@ -1,0 +1,41 @@
+syntax = "proto3";
+package aurora.acquisition;
+
+// Chirp timing and mode configuration.
+message ChirpSchedule {
+    double chirp_duration_s = 1;    // Duration of each chirp in seconds
+    double chirp_bandwidth_hz = 2;  // Frequency sweep bandwidth in Hz
+    uint32 chirps_per_burst = 3;    // Number of chirps per acquisition burst
+
+    enum ChirpMode {
+        CHIRP_MODE_UNSPECIFIED = 0;
+        CHIRP_MODE_UP_ONLY = 1;      // All up chirps
+        CHIRP_MODE_UP_DOWN = 2;      // Up + down for Doppler
+    }
+    ChirpMode mode = 4;
+}
+
+// Wavelength interleaving configuration.
+message WavelengthSchedule {
+    enum InterleavingMode {
+        INTERLEAVING_UNSPECIFIED = 0;
+        INTERLEAVING_ALTERNATING = 1;   // λ1 chirps, then λ2 chirps
+        INTERLEAVING_SIMULTANEOUS = 2;  // Both wavelengths in the same chirp
+    }
+
+    InterleavingMode mode = 1;
+    repeated double wavelengths_m = 2;  // Operating wavelengths in meters
+}
+
+// Complete sequence schedule configuration.
+// Defines chirp parameters, wavelength interleaving, and burst timing.
+message SequenceSchedule {
+    // Chirp parameters
+    ChirpSchedule chirp_schedule = 1;
+
+    // Wavelength configuration
+    WavelengthSchedule wavelength_schedule = 2;
+
+    // Burst timing
+    double burst_period_s = 3;  // Time between consecutive bursts in seconds
+}

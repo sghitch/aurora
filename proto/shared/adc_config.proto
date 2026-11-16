@@ -1,0 +1,20 @@
+syntax = "proto3";
+package aurora.shared;
+
+// ADC model configuration for signal digitization.
+// Models ADC behavior with configurable impairments.
+message AdcModelConfig {
+    double sample_rate_hz = 1;    // Sample rate in Hz
+    uint32 bits = 2;              // ADC resolution in bits
+    double input_range_v = 3;     // Full-scale input range (peak-to-peak)
+
+    // Impairments
+    double dc_offset_v = 4;       // DC offset in volts
+    double gain_error = 5;        // Fractional gain error
+    double aperture_jitter_s = 6; // Timing jitter in seconds
+
+    // Channel differences (for multi-channel)
+    repeated double channel_gains = 7;       // Per-channel gain factors
+    repeated double channel_offsets_v = 8;   // Per-channel DC offset in volts
+    repeated double channel_delays_s = 9;    // Per-channel timing skew in seconds
+}

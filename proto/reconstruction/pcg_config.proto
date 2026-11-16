@@ -1,0 +1,128 @@
+syntax = "proto3";
+package aurora.reconstruction;
+
+import "nufft_config.proto";
+import "pcg_types.proto";
+import "pcg_precomputed_data.proto";
+
+// Configuration for warm-starting PCG from previous solutions.
+//
+// When scene content changes slowly between frames, warm-starting from
+// the previous solution can significantly reduce iteration count.
+message WarmStartConfig {
+    // Threshold for detecting scene change [0.0, 1.0].
+    //
+    // If the normalized difference between consecutive measurement vectors
+    // exceeds this threshold, warm-starting is disabled for that frame.
+    // Lower values are more conservative (more resets).
+    //
+    // Valid range: (0.0, 1.0]
+    // Default: 0.3
+    double change_threshold = 1;
+
+    // Number of previous solutions to cache.
+    //
+    // Larger values allow recovery from brief occlusions but use more memory.
+    //
+    // Valid range: >= 1
+    // Default: 1
+    uint32 cache_depth = 2;
+}
+
+// Configuration for PCG (Preconditioned Conjugate Gradient) reconstruction.
+//
+// PCG solves the regularized least-squares problem:
+//   min_x ||Ax - y||^2 + lambda * ||Lx||^2
+//
+// where A is the forward operator, y is the K-space measurements,
+// L is the regularization operator, and lambda controls regularization strength.
+//
+// This is equivalent to solving the normal equations:
+//   (A*A + lambda*L*L) x = A*y
+//
+// PCG iteratively refines the solution with optional preconditioning
+// for faster convergence.
+message PcgConfig {
+    // Maximum number of CG iterations.
+    //
+    // Iteration count depends on problem conditioning and desired accuracy.
+    // Well-preconditioned problems typically converge in 10-50 iterations.
+    //
+    // Valid range: >= 1
+    // Default: 50
+    uint32 max_iterations = 1;
+
+    // Convergence tolerance (relative residual).
+    //
+    // Iteration stops when ||r_k|| / ||r_0|| < tolerance.
+    // Smaller values give more accurate solutions but require more iterations.
+    //
+    // Valid range: (0.0, 1.0)
+    // Default: 1e-6
+    double tolerance = 2;
+
+    // Regularizer type.
+    //
+    // Must be explicitly set (REGULARIZER_UNKNOWN is invalid).
+    RegularizerType regularizer_type = 3;
+
+    // Regularization strength (lambda).
+    //
+    // Larger values produce smoother solutions with less noise but may
+    // blur fine details. Optimal value depends on SNR and scene content.
+    //
+    // Valid range: > 0.0
+    // Typical range: 1e-6 to 1e-2
+    double regularizer_lambda = 4;
+
+    // Enable adaptive regularization.
+    //
+    // When true, lambda is automatically adjusted based on estimated noise
+    // level using the discrepancy principle or GCV.
+    //
+    // Default: false
+    bool adaptive_lambda = 5;
+
+    // Preconditioner type.
+    //
+    // Must be explicitly set (PRECONDITIONER_UNKNOWN is invalid).
+    PreconditionerType preconditioner_type = 6;
+
+    // Regularization epsilon for circulant/hybrid preconditioner.
+    //
+    // Prevents division by small values in the preconditioner.
+    // Only used when preconditioner_type is CIRCULANT or HYBRID.
+    //
+    // Valid range: > 0.0 (required for CIRCULANT/HYBRID)
+    // Typical: 1e-6
+    double preconditioner_epsilon = 7;
+
+    // Warm-start configuration.
+    //
+    // When present, enables warm-starting from previous solutions.
+    // Omit to disable warm-starting.
+    optional WarmStartConfig warm_start = 8;
+
+    // Use NUFFT operator instead of direct operator.
+    //
+    // NUFFT provides O(N log N) complexity vs O(N*M) for direct,
+    // but introduces small approximation errors.
+    //
+    // Default: false (use direct operator)
+    bool use_nufft_operator = 9;
+
+    // NUFFT configuration (required when use_nufft_operator = true).
+    //
+    // Specifies kernel type, oversampling factor, and other NUFFT parameters.
+    optional NufftConfig nufft_config = 10;
+
+    // Precomputed data for accelerated PCG reconstruction.
+    //
+    // Contains precomputed PSF, transfer function, regularizer spectrum, and
+    // operator diagonal for the current grid and K-space configuration.
+    // When provided, enables efficient preconditioner application.
+    //
+    // Generate using PcgPrecomputationBuilder or aurora-pcg-precompute CLI.
+    // Must match current grid size, wavelength, and regularizer/preconditioner types.
+    optional PcgPrecomputedData precomputed_data = 11;
+}

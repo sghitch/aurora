@@ -1,0 +1,45 @@
+syntax = "proto3";
+package aurora.forward;
+
+// Pupil/FOV configuration for scene projection and vignetting modeling.
+// Controls the effective field of view and edge transition behavior.
+message PupilConfig {
+    double fov_half_angle_rad = 1;      // Half-angle FOV in radians (e.g., 0.524 = 30° for 60° total FOV)
+    double rolloff_width_rad = 2;       // Smooth edge transition width in radians (e.g., 0.087 = ~5°)
+
+    // Pupil aperture shape
+    enum PupilShape {
+        PUPIL_CIRCULAR = 0;             // Circular aperture (default)
+        PUPIL_RECTANGULAR = 1;          // Rectangular aperture
+    }
+    PupilShape shape = 3;               // Aperture shape selection
+    optional double aspect_ratio = 4;   // Width/height ratio for rectangular pupil (only used when shape = PUPIL_RECTANGULAR)
+}
+
+// Optical system configuration parameters.
+// Defines the Fourier lens, wavelengths, field of view, and K-space limits.
+message OpticsConfig {
+    double fourier_lens_focal_m = 1;    // Focal length of Fourier lens in meters (e.g., 0.05)
+    double fourier_lens_diameter_m = 2; // Clear aperture diameter of Fourier lens in meters
+    repeated double wavelengths_m = 3;  // Operating wavelengths in meters (e.g., [905e-9, 1550e-9])
+    double system_fov_x_rad = 4;        // Horizontal field of view in radians
+    double system_fov_y_rad = 5;        // Vertical field of view in radians
+    double aperture_diameter_m = 6;     // Limiting aperture diameter in meters
+    double k_max_rad_per_m = 7;         // K-space passband radius of the receive optics in rad/m
+
+    // Pupil/FOV configuration for vignetting and scene projection
+    PupilConfig pupil = 8;              // Pupil model configuration
+
+    // Local oscillator tilt angle for K-space offset.
+    //
+    // In coherent detection, tilting the LO beam adds a linear phase gradient
+    // across the detector plane, equivalent to shifting all K-space samples:
+    //   k_scene = k_det + k_LO_tilt
+    //
+    // where k_LO_tilt = 2π × sin(lo_tilt_x_rad) / λ (wavelength-dependent).
+    // Zero for an on-axis LO.
+    //
+    // Sign convention: positive tilt shifts k in the positive kx direction.
+    double lo_tilt_x_rad = 9;           // LO tilt angle in x-direction (radians)
+    double lo_tilt_y_rad = 10;          // LO tilt angle in y-direction (radians)
+}

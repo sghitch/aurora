@@ -1,0 +1,56 @@
+syntax = "proto3";
+package aurora.forward;
+
+// Detector sensitivity function type in K-space.
+// Determines how the finite detector aperture affects K-space sampling.
+// MUST be explicitly specified - UNSPECIFIED throws at runtime.
+enum DetectorSensitivityType {
+    // Invalid - throws std::invalid_argument if used.
+    // Forces explicit specification of sensitivity model.
+    DETECTOR_SENSITIVITY_UNSPECIFIED = 0;
+
+    // Infinitesimal point sampling.
+    // The detector samples K-space at a single point with no spatial filtering.
+    // Use for: simplified simulations and testing.
+    // Sensitivity factor: S(delta_k) = 1.0 for all delta_k
+    DETECTOR_SENSITIVITY_POINT = 1;
+
+    // Ideal rectangular aperture model.
+    // The finite detector width produces a sinc response in K-space.
+    // Use for: physically accurate simulations.
+    // Sensitivity factor: S(delta_k) = sinc(delta_kx * w/2) * sinc(delta_ky * h/2)
+    // where w, h are detector width and height.
+    DETECTOR_SENSITIVITY_SINC = 2;
+}
+
+// Represents a single detector pixel in the Fourier-plane detector array.
+message DetectorPixel {
+    uint32 index = 1;   // Index of this pixel within the array (0-based)
+    double x_m = 2;     // X position of pixel center in meters (relative to array center)
+    double y_m = 3;     // Y position of pixel center in meters (relative to array center)
+    double width_m = 4;  // Active width of the detector element in meters
+    double height_m = 5; // Active height of the detector element in meters
+}
+
+// Represents an array of detector pixels at the Fourier plane.
+message DetectorArray {
+    string array_id = 1;               // Unique identifier for this detector array
+    repeated DetectorPixel pixels = 2; // Individual pixel specifications
+    double nominal_pitch_m = 3;        // Nominal center-to-center spacing in meters
+    double bandwidth_hz = 4;           // Detector bandwidth in Hz (e.g., 150e6)
+    double responsivity_a_per_w = 5;   // Responsivity in A/W
+    double dark_current_a = 6;         // Dark current in Amperes
+    double nep_w_per_sqrt_hz = 7;      // Noise equivalent power in W/sqrt(Hz)
+    repeated double wavelengths_m = 8; // Wavelengths this detector is sensitive to (meters)
+
+    // Sensitivity model for K-space sampling. REQUIRED - no default.
+    // Determines how the finite detector aperture affects K-space sampling.
+    // Throws std::invalid_argument at runtime if UNSPECIFIED.
+    DetectorSensitivityType sensitivity_type = 9;
+}
+
+// Top-level container for all detector geometry in the system.
+// Supports multiple detector arrays for multi-band or redundant configurations.
+message DetectorGeometry {
+    repeated DetectorArray arrays = 1; // All detector arrays in the system
+}

@@ -1,0 +1,31 @@
+syntax = "proto3";
+package aurora.shared;
+
+import "complex.proto";
+
+// Calibration data for a single detector pixel.
+// Provides amplitude/phase correction and timing offset.
+message DetectorCalibration {
+    uint32 detector_index = 1;    // Detector pixel index (0-7 for 8-pixel array)
+    Complex complex_gain = 2;     // Amplitude and phase correction
+    double timing_skew_s = 3;     // Relative timing offset in seconds
+}
+
+// K-space calibration for a specific wavelength.
+// Provides per-detector corrections to the nominal K-vector positions.
+message KSpaceCalibration {
+    double wavelength_m = 1;          // Wavelength this calibration applies to (meters)
+    repeated double kx_offsets = 2;   // Per-detector kx corrections (rad/m)
+    repeated double ky_offsets = 3;   // Per-detector ky corrections (rad/m)
+    double wavelength_scale = 4;      // Wavelength scaling correction factor
+}
+
+// Immutable calibration state for the system.
+// Represents a complete calibration snapshot that can be applied to measurements
+// to correct for detector and K-space geometry imperfections.
+message CalibrationArtifact {
+    string calibration_id = 1;                              // Unique identifier for this calibration
+    double timestamp_s = 2;                                 // Calibration timestamp (epoch seconds)
+    repeated DetectorCalibration detector_calibrations = 3; // Per-detector corrections
+    repeated KSpaceCalibration k_space_calibrations = 4;    // Per-wavelength K-space corrections
+}

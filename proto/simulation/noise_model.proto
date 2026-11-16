@@ -1,0 +1,27 @@
+syntax = "proto3";
+package aurora.simulation;
+
+// Noise model configuration for realistic signal simulation.
+// Models shot noise, thermal noise, RIN, quantization, and dark current.
+// Note: ADC parameters for quantization noise come from AdcModelConfig,
+// which should be passed separately to the NoiseModel constructor.
+message NoiseModelConfig {
+    // Enable/disable individual noise sources
+    bool enable_shot_noise = 1;
+    bool enable_thermal_noise = 2;
+    bool enable_rin_noise = 3;
+    bool enable_quantization_noise = 4;
+    bool enable_dark_current = 5;
+
+    // Detector parameters
+    double detector_responsivity_a_per_w = 6;  // Responsivity in A/W
+    double detector_dark_current_a = 7;        // Dark current in amperes
+    double transimpedance_ohm = 8;             // TIA gain in ohms
+    double temperature_k = 9;                  // Operating temperature in Kelvin
+
+    // Laser parameters
+    double rin_db_per_hz = 10;  // Relative intensity noise in dB/Hz
+
+    // System bandwidth
+    double noise_bandwidth_hz = 11;  // Noise equivalent bandwidth in Hz
+}

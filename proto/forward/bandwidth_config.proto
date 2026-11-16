@@ -1,0 +1,58 @@
+syntax = "proto3";
+package aurora.forward;
+
+// Configuration for bandwidth model parameters.
+// Controls the K-space windowing behavior for simulation and reconstruction.
+//
+// This config is shared between simulation (forward model) and reconstruction
+// to ensure both use the same physics. The measurement model is:
+//
+//   y_m = ∫ W_m(k) · X(k) dk
+//
+// where W_m(k) = H_d(k - k_d) is the K-space acceptance window of detector
+// pixel d, centered on its K-position with a width set by the pixel size.
+// This integral is evaluated numerically using midpoint quadrature with
+// quadrature_order² points.
+message BandwidthConfig {
+    // K-space window function type.
+    //
+    // Controls the shape of the K-space transfer function W_m(k).
+    // Required field - BANDWIDTH_WINDOW_UNSPECIFIED is invalid.
+    BandwidthWindowType window_type = 1;
+
+    // Number of sinc lobes to include before truncation.
+    // Only used when window_type = BANDWIDTH_WINDOW_SINC.
+    // Default: 3
+    uint32 truncation_lobes = 2;
+
+    // Minimum weight threshold for non-zero contributions.
+    // K-space points with W(k) < threshold are skipped.
+    // Default: 1e-6
+    double weight_threshold = 3;
+
+    // K-space quadrature order (points per dimension).
+    //
+    // Controls resolution of the K-space window integration for both
+    // simulation and reconstruction. Higher values provide more accurate
+    // physics modeling at increased computation cost.
+    //
+    // The integral is evaluated using midpoint rule with quadrature_order²
+    // points over the support region of W_m(k).
+    //
+    // Values:
+    // - 1: Point sampling (ignores finite bandwidth - not recommended)
+    // - 4: Standard quadrature (good balance of accuracy and speed)
+    // - 8+: High accuracy (for validation/reference)
+    //
+    // Required field - must be >= 1.
+    uint32 quadrature_order = 4;
+}
+
+// K-space window function types.
+// Different windowing options trade off sidelobe suppression vs resolution.
+enum BandwidthWindowType {
+    BANDWIDTH_WINDOW_UNSPECIFIED = 0;   // Not specified (use default)
+    BANDWIDTH_WINDOW_SINC = 1;          // Physically accurate for rect aperture
+    BANDWIDTH_WINDOW_GAUSSIAN = 2;      // Smoother, no sidelobes
+    BANDWIDTH_WINDOW_KAISER = 3;        // Used by NUFFT for gridding
+}

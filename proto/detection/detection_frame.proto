@@ -1,0 +1,18 @@
+syntax = "proto3";
+package aurora.detection;
+
+import "detection.proto";
+
+// Complete detection output for a single measurement burst.
+message DetectionFrame {
+    // Identity
+    uint64 frame_id = 1;                   // Unique frame identifier
+    double timestamp_s = 2;                // Timestamp in seconds
+
+    // Point detections
+    repeated Detection detections = 3;
+
+    // Diagnostics
+    uint32 num_active_range_bins = 4;      // Range bins with detections
+    double processing_time_ms = 5;         // Processing latency in ms
+}

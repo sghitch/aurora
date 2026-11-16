@@ -1,0 +1,52 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+.cache/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Protobuf generated files
+*.pb.cc
+*.pb.h
+
+# IDE and editor files
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Compiled object files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.pyc
+
+# Executables
+*.exe
+*.out
+
+# Test output
+Testing/
+CTestTestfile.cmake
+
+# Package files
+*.tar.gz
+*.zip
+
+# Dev Container
+.devcontainer/devcontainer-lock.json
+
+# Per-agent build directories
+build-*/

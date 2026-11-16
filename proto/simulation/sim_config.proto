@@ -1,0 +1,56 @@
+syntax = "proto3";
+package aurora.simulation;
+
+import "scene.proto";
+import "adc_config.proto";
+import "noise_model.proto";
+import "bandwidth_config.proto";
+
+enum OcclusionMode {
+    // Invalid — must be explicitly set.
+    OCCLUSION_UNSPECIFIED = 0;
+
+    // All front-facing targets visible (back-face culling only).
+    OCCLUSION_NONE = 1;
+
+    // Quick approximate occlusion check using bounding spheres.
+    OCCLUSION_BOUNDING_SPHERE = 2;
+
+    // Accurate per-facet ray-cast occlusion.
+    OCCLUSION_RAY_CAST = 3;
+}
+
+// Complete simulation configuration.
+// Combines scene definition, ADC model, noise model, and optical parameters.
+message SimConfig {
+    SceneDefinition scene = 1;
+    aurora.shared.AdcModelConfig adc = 2;
+    NoiseModelConfig noise = 3;
+
+    // Determinism
+    uint64 rng_seed = 4;  // Random seed for reproducible simulations
+
+    // Optical system parameters
+    double tx_power_w = 5;            // Transmit power in watts
+    double lo_power_w = 6;            // Local oscillator power in watts
+    double system_efficiency = 7;     // Overall optical efficiency (0 to 1)
+
+    // Simulation fidelity options
+
+    // Occlusion mode for visibility computation.
+    // Required — validation rejects OCCLUSION_UNSPECIFIED.
+    OcclusionMode occlusion_mode = 8;
+
+    // Threshold for treating a surface as perfectly specular (skips speckle).
+    // Surfaces with specular_fraction >= this value are treated as mirrors.
+    // Default: 0.9999999999 (1.0 - 1e-10).
+    double specular_threshold = 9;
+
+    // K-space window configuration for MeasurementOperator.
+    //
+    // Controls the physics of K-space windowing in simulation. The same
+    // config should be used in reconstruction for matched forward/adjoint.
+    //
+    // Required field - must be explicitly configured.
+    aurora.forward.BandwidthConfig bandwidth_config = 10;
+}

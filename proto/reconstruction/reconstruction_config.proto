@@ -1,0 +1,444 @@
+syntax = "proto3";
+package aurora.reconstruction;
+
+import "bandwidth_config.proto";
+import "nufft_config.proto";
+import "pcg_config.proto";
+
+// Reconstruction algorithm selection.
+//
+// Selection guidelines:
+// - ALGORITHM_GRIDDING_IFFT: Fastest; K-samples close to a Cartesian grid
+// - ALGORITHM_NUFFT_ADJOINT: FFT-accelerated adjoint for arbitrary K-sample positions
+// - ALGORITHM_DIRECT_ADJOINT: Reference implementation, exact but O(NM) complexity
+// - ALGORITHM_FAST_ONLINE: Single-pass gridding with density normalization (FORO)
+// - ALGORITHM_PCG_REGULARIZED: Iterative regularized least squares (PCG)
+enum ReconstructionAlgorithm {
+    ALGORITHM_GRIDDING_IFFT = 0;      // Fast gridding + inverse FFT
+    ALGORITHM_NUFFT_ADJOINT = 1;      // True NUFFT adjoint (KissFFT-accelerated)
+    ALGORITHM_DIRECT_ADJOINT = 2;     // Direct summation adjoint O(NM)
+    ALGORITHM_FAST_ONLINE = 3;        // Fast online reconstruction (FORO)
+    ALGORITHM_PCG_REGULARIZED = 4;    // PCG regularized reconstruction
+}
+
+// Taper function for the K-space density taper rolloff.
+// TAPER_NONE is invalid and must not be used - explicit configuration required.
+enum RadialTaperFunction {
+    TAPER_NONE = 0;        // Invalid/unset - must be explicitly configured
+    TAPER_LINEAR = 1;      // Linear rolloff: 1 - t
+    TAPER_COSINE = 2;      // Cosine (S-curve) rolloff: 0.5 * (1 + cos(π*t))
+    TAPER_QUADRATIC = 3;   // Quadratic: (1 - t)^exponent
+    TAPER_EXPONENTIAL = 4; // Exponential decay: exp(-exponent * t)
+}
+
+// Per-axis taper configuration for the K-space density taper.
+//
+// Weight formula along this axis:
+//   t = (|k_axis| - k_threshold) / (k_max_taper - k_threshold)  [clamped to 0,1]
+//   if |k_axis| <= k_threshold: weight = 1.0
+//   if |k_axis| >= k_max_taper: weight = retain_fraction
+//   else: weight = retain_fraction + (1 - retain_fraction) * taper(t)
+message AxisTaperConfig {
+    // K-magnitude below which samples receive full weight along this axis (rad/m).
+    // Samples with |k_axis| <= k_threshold get weight = 1.0 from this axis.
+    // Required field - must be > 0.
+    double k_threshold = 1;
+
+    // K-magnitude at which taper reaches retain_fraction (rad/m).
+    // Samples with |k_axis| >= k_max_taper get weight = retain_fraction.
+    // Required field - must be > k_threshold.
+    double k_max_taper = 2;
+
+    // Minimum weight retained for high-K samples along this axis [0, 1].
+    // Set > 0 to preserve some high-frequency content for PSF sharpness.
+    // Typical: 0.05-0.2 for artifact suppression with resolution retention.
+    // Set to 0 for hard rolloff (maximum artifact suppression).
+    // Default: 0.0
+    double retain_fraction = 3;
+
+    // Taper function shape.
+    // Must be explicitly set (TAPER_NONE is invalid and will cause an error).
+    RadialTaperFunction taper_function = 4;
+
+    // Exponent for taper curve (used with QUADRATIC and EXPONENTIAL).
+    // Higher values = more aggressive rolloff.
+    // Ignored for LINEAR and COSINE.
+    // Default: 2.0
+    optional double taper_exponent = 5;
+}
+
+// K-space density taper for downweighting high-|k| samples.
+//
+// High-|k| samples that are far apart in K-space can create grid-like
+// aliasing artifacts in the image. This taper progressively downweights
+// samples above a threshold while retaining a minimum contribution for
+// PSF sharpness.
+//
+// Supports three modes:
+// 1. Isotropic: Set only isotropic config - same taper in all directions
+// 2. Separable: Set kx_taper and/or ky_taper - independent per-axis tapers
+// 3. Combined: Set isotropic + axis tapers - weights are multiplied
+//
+// Final weight = isotropic_weight * kx_weight * ky_weight
+// (missing configs contribute weight = 1.0)
+//
+// Processing order in KSpacePreprocessor:
+//   1. K-space density taper (this) - downweight high-|k| samples
+//   2. Apodization - Gibbs ringing reduction
+//   3. DCF - density compensation
+//   4. Normalization
+message KSpaceDensityTaperConfig {
+    // Isotropic (radial) taper based on |k| = sqrt(kx² + ky²).
+    // Applied uniformly in all directions from K-space origin.
+    optional AxisTaperConfig isotropic = 1;
+
+    // Taper along kx axis only (based on |kx|).
+    optional AxisTaperConfig kx_taper = 2;
+
+    // Taper along ky axis only (based on |ky|).
+    optional AxisTaperConfig ky_taper = 3;
+}
+
+// Configuration for direct adjoint reconstruction.
+//
+// The direct adjoint computes the backprojection: x(r) = Σ_j y_j * e^(+i k_j · r)
+// This is exact but O(NM) where N=pixels, M=K-samples.
+//
+// Options to improve reconstruction quality:
+// - k_space_apodization: Reduces Gibbs ringing at edges by tapering K-space samples
+// - enable_dcf: Weights samples by inverse local density for uniform contribution
+// - normalize_output: Divides by sample count for consistent brightness
+// - density_taper: Downweights high-|k| samples that cause grid artifacts
+message DirectAdjointConfig {
+    // K-space apodization window for reducing Gibbs ringing.
+    //
+    // Applies a smooth rolloff to K-space samples as |k| approaches the
+    // slice's maximum K extent. This reduces ringing artifacts at
+    // discontinuities (edges) at the cost of some spatial resolution.
+    //
+    // Trade-offs:
+    // - APOD_NONE: No apodization (sharpest edges, most ringing)
+    // - APOD_HANN: Smooth rolloff, significant ringing reduction
+    // - APOD_TUKEY: Flat center with tapered edges (configurable via apod_param)
+    // - APOD_GAUSSIAN: Gaussian rolloff (smooth, some resolution loss)
+    enum ApodizationWindow {
+        APOD_NONE = 0;      // No apodization (default)
+        APOD_HANN = 1;      // Hann window: 0.5(1 + cos(π|k|/k_max))
+        APOD_TUKEY = 2;     // Tukey window: flat center, tapered edges
+        APOD_GAUSSIAN = 3;  // Gaussian: exp(-(|k|/k_max)^2 / 2σ^2)
+    }
+    ApodizationWindow apodization = 1;
+
+    // Apodization parameter (window-specific):
+    // - APOD_TUKEY: alpha ∈ [0,1], fraction of window that is tapered (0=rect, 1=Hann)
+    // - APOD_GAUSSIAN: sigma, controls rolloff width (default 0.4)
+    // - Others: ignored
+    optional double apod_param = 2;
+
+    // Enable density compensation function (DCF) for non-uniform K-space.
+    //
+    // When the K-samples are spaced non-uniformly, some regions of K-space
+    // hold more samples than others. Without DCF, denser regions contribute
+    // more to the reconstruction, causing artifacts.
+    //
+    // DCF weights each sample by inverse local density so all K-space
+    // regions contribute equally. Uses the iterative Pipe-Menon algorithm.
+    //
+    // Default: false (no DCF)
+    bool enable_dcf = 3;
+
+    // Number of Pipe-Menon DCF iterations (only used if enable_dcf = true).
+    // More iterations = more accurate weights but slower.
+    // Typically converges within 10-20 iterations.
+    //
+    // Default: 15
+    uint32 dcf_iterations = 4;
+
+    // Normalize output by number of K-space samples.
+    //
+    // When true, divides the result by the total number of K-space samples.
+    // This ensures consistent brightness regardless of sample count.
+    //
+    // Must be explicitly set when using apodization or DCF.
+    optional bool normalize_output = 5;
+
+    // K-space density taper for downweighting high-|k| samples.
+    //
+    // Applied BEFORE apodization and DCF. Use when widely spaced high-|k|
+    // samples cause grid-like aliasing artifacts.
+    //
+    // Supports isotropic (radial) and/or separable (per-axis) tapering.
+    // When both are configured, weights are multiplied.
+    optional KSpaceDensityTaperConfig density_taper = 6;
+}
+
+// Configuration for the reconstruction pipeline.
+message ReconstructionConfig {
+    ReconstructionAlgorithm algorithm = 1;
+
+    // Image grid parameters
+    uint32 grid_size_x = 2;        // Output grid size in x
+    uint32 grid_size_y = 3;        // Output grid size in y
+    double pixel_size_m = 4;       // Pixel size in meters
+
+    // Direct adjoint algorithm configuration.
+    // Used when algorithm = ALGORITHM_DIRECT_ADJOINT (and for K-space
+    // preprocessing by GRIDDING_IFFT and NUFFT_ADJOINT).
+    optional DirectAdjointConfig direct_adjoint_config = 5;
+
+    // NUFFT algorithm configuration.
+    // Used when algorithm = ALGORITHM_NUFFT_ADJOINT.
+    optional NufftConfig nufft_config = 6;
+
+    // Gridding algorithm configuration.
+    // Used when algorithm = ALGORITHM_GRIDDING_IFFT.
+    optional GriddingConfig gridding_config = 7;
+
+    // Fast online algorithm configuration.
+    // Used when algorithm = ALGORITHM_FAST_ONLINE.
+    optional FastOnlineConfig fast_online_config = 8;
+
+    // PCG regularized algorithm configuration.
+    // Used when algorithm = ALGORITHM_PCG_REGULARIZED.
+    optional PcgConfig pcg_config = 9;
+
+    // K-space bandwidth configuration for physics-based reconstruction.
+    //
+    // Controls the K-space window function and quadrature for the forward
+    // and adjoint operators. Should match the bandwidth_config used in
+    // simulation for accurate reconstruction.
+    //
+    // Required field - must be explicitly configured.
+    aurora.forward.BandwidthConfig bandwidth_config = 10;
+}
+
+// Interpolation kernel for gridding.
+//
+// Controls how off-grid K-space samples are spread to nearby grid points.
+// Kernel spreading fills the K-grid between samples by distributing each
+// sample's influence to multiple cells.
+//
+// Trade-offs:
+// - GRIDDING_KERNEL_NEAREST: Fastest, no spreading
+// - GRIDDING_KERNEL_GAUSSIAN: Smooth spreading, good for gap-filling
+// - GRIDDING_KERNEL_KAISER_BESSEL: Compact support, better frequency response
+enum GriddingKernel {
+    GRIDDING_KERNEL_UNSPECIFIED = 0;    // Invalid/unset - must be explicitly configured
+    GRIDDING_KERNEL_NEAREST = 1;        // Nearest-neighbor (no spreading)
+    GRIDDING_KERNEL_GAUSSIAN = 2;       // Gaussian kernel (infinite support, truncated)
+    GRIDDING_KERNEL_KAISER_BESSEL = 3;  // Kaiser-Bessel (compact support)
+}
+
+// Configuration for gridding reconstruction.
+//
+// Controls the kernel used to spread K-space samples onto the regular grid.
+// A wider kernel fills more of the K-grid between samples.
+//
+// When kernel spreading is enabled:
+// - Each K-sample is spread to multiple nearby grid cells weighted by kernel
+// - Cells accumulate weighted contributions from all nearby samples
+// - Final normalization divides by total weight at each cell
+//
+// This partially fills the gaps between K-samples, reducing the periodic
+// artifacts that regularly spaced gaps produce in the image.
+message GriddingConfig {
+    // Kernel type for spreading samples.
+    // Must be explicitly set - GRIDDING_KERNEL_UNSPECIFIED is invalid.
+    // Use GRIDDING_KERNEL_NEAREST for no spreading.
+    GriddingKernel kernel = 1;
+
+    // Kernel width in grid cells (radius).
+    //
+    // For GRIDDING_KERNEL_GAUSSIAN: samples within kernel_width cells receive weight
+    // For GRIDDING_KERNEL_KAISER_BESSEL: compact support within kernel_width cells
+    //
+    // Larger widths spread samples further, filling more gaps but potentially
+    // blurring the K-space representation.
+    //
+    // Typical values: 1-3 for gap-filling, 4+ for heavy smoothing
+    // Default: 2
+    optional uint32 kernel_width = 2;
+
+    // Gaussian sigma parameter (fraction of kernel_width).
+    //
+    // Only used with GRIDDING_KERNEL_GAUSSIAN.
+    // Sigma = kernel_width * gaussian_sigma_fraction
+    //
+    // Smaller values concentrate weight near the sample.
+    // Larger values spread weight more uniformly across kernel support.
+    //
+    // Default: 0.5 (sigma = half of kernel_width)
+    optional double gaussian_sigma_fraction = 3;
+
+    // Kaiser-Bessel beta parameter.
+    //
+    // Only used with GRIDDING_KERNEL_KAISER_BESSEL.
+    // Higher values give sharper frequency response but more ringing.
+    //
+    // Default: auto-computed from kernel_width
+    optional double kaiser_beta = 4;
+}
+
+// =============================================================================
+// FAST ONLINE RECONSTRUCTION (FORO)
+// =============================================================================
+
+// Window applied across the K-sample axis before gridding.
+//
+// Tapers the samples from one end of the array's K-sample axis to the
+// other, reducing ringing/ghosting caused by the gaps between K-samples.
+//
+// Trade-offs:
+// - NONE: No windowing
+// - HANN: Smooth rolloff, significant artifact reduction
+// - TUKEY: Configurable flat center with tapered edges
+// - KAISER: Optimal sidelobe control via beta parameter
+enum AntiGapWindow {
+    ANTI_GAP_WINDOW_UNSPECIFIED = 0;  // Invalid - must be explicitly set
+    ANTI_GAP_WINDOW_NONE = 1;         // No window
+    ANTI_GAP_WINDOW_HANN = 2;         // Hann window: 0.5(1 - cos(2*pi*j/(N-1)))
+    ANTI_GAP_WINDOW_TUKEY = 3;        // Tukey window - requires anti_gap_tukey_alpha
+    ANTI_GAP_WINDOW_KAISER = 4;       // Kaiser window - requires anti_gap_kaiser_beta
+}
+
+// Density normalization mode for K-space gridding.
+//
+// Controls how the accumulated density map D[k] is used to normalize the
+// gridded K-space data Y[k]. This provides online PSF correction by
+// approximating (A^H * W * A)^-1.
+enum DensityNormalizationMode {
+    DENSITY_NORM_UNSPECIFIED = 0;     // Invalid - must be explicitly set
+    DENSITY_NORM_NONE = 1;            // No normalization (raw accumulation)
+    DENSITY_NORM_KERNEL = 2;          // Normalize by |K|: Y[k] / (D[k] + epsilon)
+    DENSITY_NORM_KERNEL_SQUARED = 3;  // Accumulate |K|^2 into D[k], normalize: Y[k] / (D[k] + epsilon)
+}
+
+// Post-processing mode for image enhancement after IFFT.
+enum PostProcessingMode {
+    POST_PROC_UNSPECIFIED = 0;        // Invalid - must be explicitly set
+    POST_PROC_NONE = 1;               // No post-processing
+    POST_PROC_LAPLACIAN_SHARPEN = 2;  // Laplacian unsharp filter - requires laplacian_strength
+    POST_PROC_DIFFUSION = 3;          // Diffusion smoothing - requires diffusion_coefficient
+}
+
+// Configuration for fast online reconstruction operator (FORO).
+//
+// FORO provides a streamlined reconstruction path optimized for real-time
+// operation with the following stages:
+//
+// 1. Window applied across the K-sample axis before gridding
+// 2. Simultaneous gridding + density map accumulation (single pass)
+// 3. K-space normalization (online PSF correction): Y_tilde = Y / (D + epsilon)
+// 4. IFFT to image
+// 5. Optional post-processing (sharpening/diffusion)
+// 6. Optional iterative refinement (1-2 iterations)
+// 7. Optional phase-aware interpolation between adjacent K-samples
+//
+// Complexity:
+// - Single-pass: O(M * W^2 + N log N) where M=samples, W=kernel width, N=pixels
+// - With refinement: O(iterations * (M * W^2 + N log N))
+//
+// When to use:
+// - Real-time reconstruction requirements (< 10 ms target)
+// - Moderate quality is acceptable (not iterative quality)
+//
+// When NOT to use:
+// - Maximum quality reconstruction (use ALGORITHM_PCG_REGULARIZED)
+message FastOnlineConfig {
+    // =========================================================================
+    // REQUIRED: Gridding kernel configuration
+    // =========================================================================
+
+    // Kernel type for spreading K-samples to grid.
+    // Must be explicitly set (GRIDDING_KERNEL_UNSPECIFIED is invalid).
+    GriddingKernel kernel = 1;
+
+    // Kernel width in grid cells (radius).
+    // Required - no default. Typical values: 2-4.
+    uint32 kernel_width = 2;
+
+    // =========================================================================
+    // REQUIRED: K-sample axis windowing
+    // =========================================================================
+
+    // Window applied across the K-sample axis to suppress artifacts from
+    // the gaps between K-samples.
+    // Must be explicitly set (ANTI_GAP_WINDOW_UNSPECIFIED is invalid).
+    // Applied to each sample BEFORE gridding.
+    AntiGapWindow anti_gap_window = 3;
+
+    // Tukey alpha parameter [0,1]. Fraction of window that is tapered.
+    // 0 = rectangular (no taper), 1 = equivalent to Hann.
+    // Required when anti_gap_window = ANTI_GAP_WINDOW_TUKEY.
+    double anti_gap_tukey_alpha = 4;
+
+    // Kaiser beta parameter. Controls sidelobe level vs main lobe width.
+    // Higher values = lower sidelobes but wider main lobe.
+    // Required when anti_gap_window = ANTI_GAP_WINDOW_KAISER.
+    double anti_gap_kaiser_beta = 5;
+
+    // =========================================================================
+    // REQUIRED: Density normalization
+    // =========================================================================
+
+    // How to use accumulated density map for K-space normalization.
+    // Must be explicitly set (DENSITY_NORM_UNSPECIFIED is invalid).
+    DensityNormalizationMode density_normalization = 6;
+
+    // Epsilon for division: Y_norm = Y / (D + epsilon).
+    // Required when density_normalization != DENSITY_NORM_NONE.
+    // Prevents division by zero in sparse K-regions.
+    // Typical value: 1e-10 for numerical stability.
+    double density_epsilon = 7;
+
+    // =========================================================================
+    // REQUIRED: Post-processing
+    // =========================================================================
+
+    // Post-processing mode after IFFT.
+    // Must be explicitly set (POST_PROC_UNSPECIFIED is invalid).
+    PostProcessingMode post_processing = 8;
+
+    // Laplacian unsharp filter strength [0,1].
+    // Required when post_processing = POST_PROC_LAPLACIAN_SHARPEN.
+    // Higher values = more sharpening.
+    double laplacian_strength = 9;
+
+    // Diffusion coefficient for smoothing.
+    // Required when post_processing = POST_PROC_DIFFUSION.
+    // Higher values = more smoothing per step.
+    double diffusion_coefficient = 10;
+
+    // =========================================================================
+    // REQUIRED: Feature flags (booleans are always explicit)
+    // =========================================================================
+
+    // Enable phase-aware interpolation that synthesizes K-space values
+    // midway between adjacent K-samples, reducing the periodic smear the
+    // gaps between K-samples produce.
+    bool enable_gap_interpolation = 11;
+
+    // Enable iterative refinement after initial reconstruction.
+    bool enable_refinement = 12;
+
+    // =========================================================================
+    // REFINEMENT: Required when enable_refinement = true
+    // =========================================================================
+
+    // Number of refinement iterations.
+    // Required when enable_refinement = true.
+    // Keep to 1-2 for "fast online" mode. Higher values approach iterative
+    // quality but defeat the purpose of fast online reconstruction.
+    uint32 refinement_iterations = 13;
+
+    // Refinement step size (alpha in x_{t+1} = x_t + alpha * gradient).
+    // Required when enable_refinement = true.
+    // Typical range: 0.3-0.7. Too high = instability, too low = slow convergence.
+    double refinement_alpha = 14;
+
+    // Regularization weight (lambda for L^H*L smoothness term).
+    // Required when enable_refinement = true.
+    // Set to 0 to disable regularization (pure data fidelity).
+    // Typical range: 0.001-0.1 for mild regularization.
+    double refinement_lambda = 15;
+}

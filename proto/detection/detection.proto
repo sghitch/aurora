@@ -1,0 +1,37 @@
+syntax = "proto3";
+package aurora.detection;
+
+import "vector.proto";
+import "doppler_result.proto";
+
+// Single point detection produced by the phase-gradient detection pipeline.
+message Detection {
+    // Position
+    double range_m = 1;                        // Range in meters
+    double azimuth_rad = 2;                    // Azimuth angle in radians
+    aurora.shared.Vector3 position_m = 3;      // Cartesian position in meters
+
+    // Kinematics
+    DopplerResult doppler = 4;                 // Doppler velocity result
+
+    // Quality metrics
+    double snr_db = 5;                         // Signal-to-noise ratio in dB
+    double phase_residual_rad = 6;             // Phase gradient fit residual in radians
+
+    // Contributing samples
+    repeated uint32 detector_indices = 7;      // Detector pixels contributing to this detection
+
+    // Angle estimation quality
+    double angular_extent_rad = 8;             // Target angular extent (FWHM)
+    double azimuth_uncertainty_rad = 9;        // Azimuth uncertainty in radians
+
+    // Elevation estimation.
+    // Elevation is observable only when the K-samples span ky; with a linear
+    // detector array it is reported with infinite uncertainty.
+    // Position calculation uses both angles:
+    //   x = range * cos(elevation) * sin(azimuth)
+    //   y = range * sin(elevation)
+    //   z = range * cos(elevation) * cos(azimuth)
+    double elevation_rad = 10;                 // Elevation angle in radians
+    double elevation_uncertainty_rad = 11;     // Elevation uncertainty in radians
+}

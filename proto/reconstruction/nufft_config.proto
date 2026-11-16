@@ -1,0 +1,83 @@
+syntax = "proto3";
+package aurora.reconstruction;
+
+// Window function for physics weighting.
+// Mirrors aurora.forward.BandwidthWindowType for cross-module compatibility.
+enum NufftWindowType {
+    NUFFT_WINDOW_UNSPECIFIED = 0;  // Invalid - must be explicitly set
+    NUFFT_WINDOW_SINC = 1;         // Physically accurate for rect aperture
+    NUFFT_WINDOW_GAUSSIAN = 2;     // Smooth, no sidelobes
+    NUFFT_WINDOW_KAISER = 3;       // Tunable sidelobe suppression
+}
+
+// Interpolation kernel for NUFFT gridding/degridding.
+//
+// The kernel determines how off-grid K-space samples are interpolated
+// onto the regular FFT grid. Kaiser-Bessel is recommended for best accuracy.
+//
+// Trade-offs:
+// - KERNEL_KAISER_BESSEL: Best accuracy, slightly more computation
+// - KERNEL_GAUSSIAN: Faster, but lower accuracy due to infinite support
+enum NufftKernel {
+    KERNEL_UNSPECIFIED = 0;     // Invalid/unset - will default to Kaiser-Bessel
+    KERNEL_KAISER_BESSEL = 1;   // Kaiser-Bessel (optimal accuracy, compact support)
+    KERNEL_GAUSSIAN = 2;        // Gaussian (infinite support, truncated)
+}
+
+// Configuration for NUFFT (Non-Uniform FFT) reconstruction.
+//
+// NUFFT provides O(N log N) complexity compared to O(N^2) for direct adjoint,
+// enabling efficient reconstruction for larger grid sizes.
+//
+// Accuracy depends on oversampling_factor and kernel_width:
+// - Default (2.0, 4): ~25% error, suitable for iterative reconstruction
+// - High accuracy (4.0, 4): ~0.1% error, suitable for final images
+//
+// Memory: O(N * oversampling_factor^2) for oversampled grid
+message NufftConfig {
+    // Interpolation kernel type.
+    // Default: KERNEL_KAISER_BESSEL
+    NufftKernel kernel = 1;
+
+    // Oversampling factor for the FFT grid.
+    //
+    // Higher values improve accuracy by reducing aliasing from the
+    // truncated interpolation kernel. Values < 1.0 are invalid.
+    //
+    // Typical values:
+    // - 1.5: Minimum, low accuracy
+    // - 2.0: Standard (default), good speed/accuracy balance
+    // - 3.0-4.0: High accuracy mode
+    //
+    // Default: 2.0
+    optional double oversampling_factor = 2;
+
+    // Kernel width in grid points.
+    //
+    // Wider kernels interpolate over more neighbors, improving accuracy
+    // but increasing computation. Must be >= 1.
+    //
+    // Typical values:
+    // - 4: Standard (default)
+    // - 6-8: Higher accuracy
+    //
+    // Default: 4
+    optional uint32 kernel_width = 3;
+
+    // Kaiser-Bessel shape parameter (beta).
+    //
+    // Controls the trade-off between main lobe width and side lobe level.
+    // If not set (0.0), computed automatically from oversampling and width
+    // using the Beatty et al. formula.
+    //
+    // Default: auto-computed
+    optional double kernel_beta = 4;
+
+    // Window type for physics weighting.
+    //
+    // Controls the window function used for MeasurementOperator weighting W(k).
+    // MUST be explicitly set when bandwidth info is available.
+    //
+    // No default - caller must specify.
+    optional NufftWindowType window_type = 5;
+}

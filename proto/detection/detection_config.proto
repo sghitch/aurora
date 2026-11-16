@@ -1,0 +1,92 @@
+syntax = "proto3";
+package aurora.detection;
+
+// CFAR (Constant False Alarm Rate) mode selection
+enum CfarMode {
+    CFAR_MODE_UNSPECIFIED = 0;
+    CFAR_MODE_FIXED = 1;      // Fixed threshold
+    CFAR_MODE_CA = 2;         // Cell-Averaging CFAR
+    CFAR_MODE_GO = 3;         // Greatest-Of CFAR
+    CFAR_MODE_SO = 4;         // Smallest-Of CFAR
+    CFAR_MODE_OS = 5;         // Order-Statistic CFAR
+}
+
+// Configuration for CFAR adaptive thresholding.
+// All fields except skip_bins are required when CFAR mode is not FIXED.
+message CfarConfig {
+    // CFAR algorithm mode (required)
+    CfarMode mode = 1;
+
+    // Number of guard cells on each side of cell under test.
+    // These are excluded from noise estimation to avoid signal leakage.
+    // Required for CFAR modes (typically 2-4).
+    uint32 guard_cells = 2;
+
+    // Number of reference cells on each side for noise estimation.
+    // Required for CFAR modes (typically 8-16).
+    uint32 reference_cells = 3;
+
+    // Threshold multiplier above noise estimate (linear scale).
+    // Detection if: cell_magnitude > threshold_factor * noise_estimate.
+    // Required for CFAR modes (typically 4.0-10.0, i.e. ~12-20 dB).
+    double threshold_factor = 4;
+
+    // For OS-CFAR: which order statistic to use (0 = min, reference_cells*2-1 = max).
+    // Required for OS-CFAR mode. Typical: 3/4 of the way through sorted list.
+    uint32 os_rank = 5;
+
+    // Minimum detection threshold (linear) to avoid noise-only false alarms.
+    // Applied after CFAR: final_threshold = max(cfar_threshold, min_threshold).
+    // Required for CFAR modes.
+    double min_threshold = 6;
+
+    // Minimum range bins to skip (filters DC/near-zero range artifacts).
+    // Detections in bins 0 through skip_bins-1 are suppressed.
+    // Optional, defaults to 0 (no bins skipped).
+    uint32 skip_bins = 7;
+}
+
+// Result from CFAR detection for a single range bin.
+// Used for debugging and diagnostics.
+message CfarDetection {
+    // Range bin index where detection occurred
+    uint32 bin_index = 1;
+
+    // Signal magnitude at this bin
+    double magnitude = 2;
+
+    // Estimated noise level from reference cells
+    double noise_estimate = 3;
+
+    // Detection threshold used (threshold_factor * noise_estimate)
+    double threshold = 4;
+
+    // Signal-to-noise ratio in dB: 10 * log10(magnitude / noise_estimate)
+    double snr_db = 5;
+}
+
+// Configuration for the detection pipeline (phase-gradient angle estimation).
+message DetectionConfig {
+    // Range bin discovery
+    double magnitude_threshold_db = 1;    // Fixed energy threshold for active range bins (dB)
+
+    // Angle search
+    uint32 num_angular_bins = 2;          // Upper bound on matched-filter search bins over the FOV
+
+    // Phase gradient fitting
+    uint32 min_pixels_for_gradient = 3;   // Minimum detector pixels required
+    double max_phase_residual_rad = 4;    // Maximum acceptable phase residual (0 = no limit)
+    double max_condition_number = 5;      // Maximum condition number for fit validity (0 = no limit)
+
+    // Doppler extraction
+    bool enable_doppler = 6;              // Enable Doppler velocity estimation
+    double min_velocity_mps = 7;          // Minimum detectable velocity
+
+    // SNR computation
+    double noise_floor_db = 8;            // Noise floor in dB for SNR calculation
+
+    // CFAR configuration for adaptive thresholding.
+    // When set, replaces fixed magnitude_threshold_db with adaptive CFAR.
+    // When not set, falls back to fixed magnitude_threshold_db.
+    optional CfarConfig cfar = 9;
+}
