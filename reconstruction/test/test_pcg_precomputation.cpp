@@ -23,6 +23,7 @@
 #include <fstream>
 #include <memory>
 #include <random>
+#include <sstream>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -68,14 +69,32 @@ aurora::shared::KSpaceSlice create_slice(
 
 }  // namespace
 
-// RAII helper for temporary file cleanup
+// RAII helper for temporary file cleanup.
+//
+// Each test runs in its own process under ctest, possibly in parallel, so the
+// file name carries a per-process random token to keep the processes from
+// clobbering each other's files in the shared temp directory.
 class TempFile {
   public:
     explicit TempFile(const std::string& name)
-        : path_(std::filesystem::temp_directory_path() / name) {}
-    ~TempFile() { std::filesystem::remove(path_); }
+        : path_(std::filesystem::temp_directory_path() / (process_token() + "_" + name)) {}
+    ~TempFile() {
+        std::error_code ec;
+        std::filesystem::remove(path_, ec);
+    }
     std::string path() const { return path_.string(); }
+
   private:
+    static const std::string& process_token() {
+        static const std::string token = [] {
+            std::random_device rd;
+            std::ostringstream oss;
+            oss << std::hex << rd() << rd();
+            return oss.str();
+        }();
+        return token;
+    }
+
     std::filesystem::path path_;
 };
 
