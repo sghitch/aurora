@@ -183,4 +183,8 @@ cmake --build . --target docs
 
 ## License
 
-TBD
+Copyright (C) 2026 Stephen Hitchcock.
+
+Aurora is free software, licensed under the GNU General Public License,
+version 3 or (at your option) any later version. See [LICENSE](LICENSE) for
+the full text.
